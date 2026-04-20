@@ -71,15 +71,28 @@ trap cleanup EXIT INT TERM
 log "Fetching latest release metadata"
 curl -fsSL -H "User-Agent: shaka-installer" "$api_url" -o "$release_json" || fail "Failed to fetch latest release"
 
+extract_browser_download_urls() {
+	awk '{
+		s = $0
+		while (match(s, /"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+			m = substr(s, RSTART, RLENGTH)
+			sub(/^.*"browser_download_url"[[:space:]]*:[[:space:]]*"/, "", m)
+			sub(/"$/, "", m)
+			print m
+			s = substr(s, RSTART + RLENGTH)
+		}
+	}' "$release_json"
+}
+
 tag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$release_json" | head -n 1)
 [ -n "$tag" ] || fail "Release metadata parse failed: missing tag_name"
 
 archive_name="shaka-${tag}-${target}.tar.gz"
 
-archive_url=$(sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$release_json" | grep -F "/${archive_name}" | head -n 1)
+archive_url=$(extract_browser_download_urls | grep -F "/${archive_name}" | head -n 1)
 [ -n "$archive_url" ] || fail "Release metadata parse failed: missing asset:${archive_name}"
 
-checksum_url=$(sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$release_json" | grep -F "/${checksum_name}" | head -n 1)
+checksum_url=$(extract_browser_download_urls | grep -F "/${checksum_name}" | head -n 1)
 [ -n "$checksum_url" ] || fail "Release metadata parse failed: missing checksum"
 
 version=${tag#v}
@@ -113,7 +126,7 @@ log "Downloading checksum file"
 curl -fsSL -H "User-Agent: shaka-installer" "$checksum_url" -o "$checksum_path" || fail "Failed to download checksum file"
 
 log "Verifying archive checksum"
-expected_hash=$(awk -v f="$archive_name" '$2 == f {print $1}' "$checksum_path" | head -n 1)
+expected_hash=$(awk -v f="$archive_name" '$2 == f || $2 == "*" f {print $1}' "$checksum_path" | head -n 1)
 [ -n "$expected_hash" ] || fail "Could not find checksum entry for $archive_name"
 actual_hash=$(checksum_file "$archive_path")
 [ "$expected_hash" = "$actual_hash" ] || fail "Checksum mismatch for $archive_name (expected $expected_hash, got $actual_hash)"
