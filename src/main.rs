@@ -9,11 +9,11 @@ fn main() -> ExitCode {
     };
 
     let target = match shell.as_str() {
+        "zsh" => render::Shell::Zsh,
         "bash" => render::Shell::Bash,
         "fish" => render::Shell::Fish,
         "pwsh" => render::Shell::Pwsh,
         "pwsh-conflict" => render::Shell::PwshConflict,
-        "zsh" => render::Shell::Zsh,
         _ => {
             eprintln!("unsupported shell: {shell}");
             eprintln!("usage: shaka <bash|fish|pwsh|pwsh-conflict|zsh>");
