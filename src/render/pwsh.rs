@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-
 use crate::utils::env_expand::expand_pwsh_env_vars;
 
 pub fn render(entries: &IndexMap<String, String>, conflict_mode: bool) -> String {

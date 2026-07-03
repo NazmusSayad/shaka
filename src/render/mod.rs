@@ -1,15 +1,20 @@
 mod fish;
 mod pwsh;
 mod sh;
-
 use indexmap::IndexMap;
+use serde::Deserialize;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Deserialize)]
 pub enum Shell {
+    #[serde(rename = "bash")]
     Bash,
+    #[serde(rename = "fish")]
     Fish,
+    #[serde(rename = "pwsh")]
     Pwsh,
+    #[serde(rename = "pwsh-conflict")]
     PwshConflict,
+    #[serde(rename = "zsh")]
     Zsh,
 }
 

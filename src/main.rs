@@ -1,5 +1,4 @@
 use std::process::ExitCode;
-
 use shaka::{config, render};
 
 fn main() -> ExitCode {
@@ -22,7 +21,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let entries = match config::load_merged_config() {
+    let entries = match config::load_merged_config(target) {
         Ok(entries) => entries,
         Err(err) => {
             eprintln!("{err}");
