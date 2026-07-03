@@ -1,22 +1,76 @@
+use crate::render::Shell;
+use indexmap::IndexMap;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use indexmap::IndexMap;
-use serde::Deserialize;
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum ConfigForm {
-    Map(BTreeMap<String, String>),
-    Pairs(Vec<(String, String)>),
+    Map(BTreeMap<String, ConfigValue>),
+    Pairs(Vec<(String, ConfigValue)>),
 }
 
-pub fn load_merged_config() -> Result<IndexMap<String, String>, String> {
-    load_from_paths(config_paths())
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfigValue {
+    Raw(String),
+    Detailed(DetailedValue),
 }
 
-fn load_from_paths(paths: Vec<PathBuf>) -> Result<IndexMap<String, String>, String> {
+#[derive(Deserialize)]
+struct DetailedValue {
+    cmd: String,
+    #[serde(default)]
+    shell: Option<OneOrMany<Shell>>,
+    #[serde(default)]
+    platform: Option<OneOrMany<Platform>>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany<T> {
+    One(T),
+    Many(Vec<T>),
+}
+
+impl<T: PartialEq> OneOrMany<T> {
+    fn contains(&self, target: &T) -> bool {
+        match self {
+            OneOrMany::One(value) => value == target,
+            OneOrMany::Many(values) => values.contains(target),
+        }
+    }
+}
+
+#[derive(Deserialize, PartialEq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum Platform {
+    Windows,
+    Linux,
+    Macos,
+}
+
+pub fn load_merged_config(shell: Shell) -> Result<IndexMap<String, String>, String> {
+    let platform = current_platform()?;
+    load_from_paths(config_paths(), shell, platform)
+}
+
+fn current_platform() -> Result<Platform, String> {
+    match std::env::consts::OS {
+        "windows" => Ok(Platform::Windows),
+        "linux" => Ok(Platform::Linux),
+        "macos" => Ok(Platform::Macos),
+        other => Err(format!("unrecognized platform: {other}")),
+    }
+}
+
+fn load_from_paths(
+    paths: Vec<PathBuf>,
+    shell: Shell,
+    platform: Platform,
+) -> Result<IndexMap<String, String>, String> {
     let mut merged = IndexMap::new();
 
     for path in paths {
@@ -24,32 +78,38 @@ fn load_from_paths(paths: Vec<PathBuf>) -> Result<IndexMap<String, String>, Stri
             continue;
         }
 
-        let pairs = parse_config_file(&path)?;
+        let pairs = parse_config_file(&path, shell, platform)?;
         merge_pairs(&mut merged, pairs);
     }
 
     Ok(merged)
 }
 
-fn parse_config_file(path: &Path) -> Result<Vec<(String, String)>, String> {
+fn parse_config_file(
+    path: &Path,
+    shell: Shell,
+    platform: Platform,
+) -> Result<Vec<(String, String)>, String> {
     let content = fs::read_to_string(path)
         .map_err(|err| format!("failed reading {}: {err}", path.display()))?;
 
-    if path.extension().is_some_and(|ext| ext == "yaml") {
+    let pairs = if path.extension().is_some_and(|ext| ext == "yaml") {
         parse_yaml_pairs(&content)
-            .map_err(|err| format!("failed parsing YAML {}: {err}", path.display()))
+            .map_err(|err| format!("failed parsing YAML {}: {err}", path.display()))?
     } else {
         parse_jsonc_pairs(&content)
-            .map_err(|err| format!("failed parsing JSONC {}: {err}", path.display()))
-    }
+            .map_err(|err| format!("failed parsing JSONC {}: {err}", path.display()))?
+    };
+
+    Ok(filter_pairs(pairs, shell, platform))
 }
 
-fn parse_yaml_pairs(content: &str) -> Result<Vec<(String, String)>, serde_yaml_ng::Error> {
+fn parse_yaml_pairs(content: &str) -> Result<Vec<(String, ConfigValue)>, serde_yaml_ng::Error> {
     let parsed: ConfigForm = serde_yaml_ng::from_str(content)?;
     Ok(normalize(parsed))
 }
 
-fn parse_jsonc_pairs(content: &str) -> Result<Vec<(String, String)>, String> {
+fn parse_jsonc_pairs(content: &str) -> Result<Vec<(String, ConfigValue)>, String> {
     let value = jsonc_parser::parse_to_serde_value(content, &Default::default())
         .map_err(|err| err.to_string())?
         .ok_or_else(|| "empty JSON input".to_string())?;
@@ -58,11 +118,41 @@ fn parse_jsonc_pairs(content: &str) -> Result<Vec<(String, String)>, String> {
     Ok(normalize(parsed))
 }
 
-fn normalize(parsed: ConfigForm) -> Vec<(String, String)> {
+fn normalize(parsed: ConfigForm) -> Vec<(String, ConfigValue)> {
     match parsed {
         ConfigForm::Map(map) => map.into_iter().collect(),
         ConfigForm::Pairs(pairs) => pairs,
     }
+}
+
+fn filter_pairs(
+    pairs: Vec<(String, ConfigValue)>,
+    shell: Shell,
+    platform: Platform,
+) -> Vec<(String, String)> {
+    let mut kept = Vec::with_capacity(pairs.len());
+
+    for (key, value) in pairs {
+        match value {
+            ConfigValue::Raw(cmd) => kept.push((key, cmd)),
+            ConfigValue::Detailed(detail) => {
+                let platform_ok = match &detail.platform {
+                    None => true,
+                    Some(allowed) => allowed.contains(&platform),
+                };
+                let shell_ok = match &detail.shell {
+                    None => true,
+                    Some(allowed) => allowed.contains(&shell),
+                };
+
+                if platform_ok && shell_ok {
+                    kept.push((key, detail.cmd));
+                }
+            }
+        }
+    }
+
+    kept
 }
 
 fn merge_pairs(merged: &mut IndexMap<String, String>, pairs: Vec<(String, String)>) {
@@ -100,21 +190,36 @@ fn home_dir() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_from_paths, merge_pairs, parse_jsonc_pairs, parse_yaml_pairs};
+    use super::{
+        Platform, filter_pairs, load_from_paths, merge_pairs, parse_jsonc_pairs, parse_yaml_pairs,
+    };
+    use crate::render::Shell;
     use indexmap::IndexMap;
     use std::fs;
 
     fn unique_dir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("shaka-test-{nanos}"))
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("shaka-test-{nanos}-{seq}"))
+    }
+
+    fn filtered_yaml(content: &str, shell: Shell, platform: Platform) -> Vec<(String, String)> {
+        filter_pairs(parse_yaml_pairs(content).unwrap(), shell, platform)
     }
 
     #[test]
     fn parses_yaml_map() {
-        let pairs = parse_yaml_pairs("dc: docker compose\nls: eza\n").unwrap();
+        let pairs = filtered_yaml(
+            "dc: docker compose\nls: eza\n",
+            Shell::Bash,
+            Platform::Linux,
+        );
         assert_eq!(
             pairs,
             vec![
@@ -126,7 +231,11 @@ mod tests {
 
     #[test]
     fn parses_yaml_pairs_array() {
-        let pairs = parse_yaml_pairs("- [dc, docker compose]\n- [ls, eza]\n").unwrap();
+        let pairs = filtered_yaml(
+            "- [dc, docker compose]\n- [ls, eza]\n",
+            Shell::Bash,
+            Platform::Linux,
+        );
         assert_eq!(
             pairs,
             vec![
@@ -138,9 +247,12 @@ mod tests {
 
     #[test]
     fn parses_jsonc_map() {
-        let pairs =
+        let pairs = filter_pairs(
             parse_jsonc_pairs("{\n // comment\n \"dc\": \"docker compose\",\n \"ls\": \"eza\"\n}")
-                .unwrap();
+                .unwrap(),
+            Shell::Bash,
+            Platform::Linux,
+        );
         assert_eq!(
             pairs,
             vec![
@@ -152,7 +264,11 @@ mod tests {
 
     #[test]
     fn parses_jsonc_pairs_array() {
-        let pairs = parse_jsonc_pairs("[[\"dc\",\"docker compose\"],[\"ls\",\"eza\"]]").unwrap();
+        let pairs = filter_pairs(
+            parse_jsonc_pairs("[[\"dc\",\"docker compose\"],[\"ls\",\"eza\"]]").unwrap(),
+            Shell::Bash,
+            Platform::Linux,
+        );
         assert_eq!(
             pairs,
             vec![
@@ -160,6 +276,71 @@ mod tests {
                 ("ls".to_string(), "eza".to_string())
             ]
         );
+    }
+
+    #[test]
+    fn detailed_value_platform_list_filters() {
+        let content = "ll:\n  cmd: eza -l\n  platform: [linux, macos]\n";
+
+        let kept = filtered_yaml(content, Shell::Bash, Platform::Macos);
+        assert_eq!(kept, vec![("ll".to_string(), "eza -l".to_string())]);
+
+        let dropped = filtered_yaml(content, Shell::Bash, Platform::Windows);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn detailed_value_single_platform_filters() {
+        let content = "open:\n  cmd: explorer .\n  platform: windows\n";
+
+        let kept = filtered_yaml(content, Shell::Bash, Platform::Windows);
+        assert_eq!(kept, vec![("open".to_string(), "explorer .".to_string())]);
+
+        let dropped = filtered_yaml(content, Shell::Bash, Platform::Linux);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn detailed_value_shell_filters_exact_token() {
+        let content = "rm:\n  cmd: Remove-Item\n  shell: pwsh\n";
+
+        let kept = filtered_yaml(content, Shell::Pwsh, Platform::Windows);
+        assert_eq!(kept, vec![("rm".to_string(), "Remove-Item".to_string())]);
+
+        let dropped = filtered_yaml(content, Shell::PwshConflict, Platform::Windows);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn filter_before_merge_keeps_applicable_earlier_entry() {
+        let dir = unique_dir();
+        fs::create_dir_all(&dir).unwrap();
+
+        let global = dir.join("global.yaml");
+        let project = dir.join("project.yaml");
+
+        fs::write(&global, "dc: docker compose\n").unwrap();
+        fs::write(
+            &project,
+            "dc:\n  cmd: podman compose\n  platform: windows\n",
+        )
+        .unwrap();
+
+        let merged = load_from_paths(vec![global, project], Shell::Bash, Platform::Linux).unwrap();
+        let items: Vec<_> = merged.into_iter().collect();
+
+        assert_eq!(
+            items,
+            vec![("dc".to_string(), "docker compose".to_string())]
+        );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unknown_platform_name_errors() {
+        let result = parse_yaml_pairs("bad:\n  cmd: x\n  platform: solaris\n");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -202,7 +383,7 @@ mod tests {
         fs::write(&global, "dc: docker compose\nls: eza\n").unwrap();
         fs::write(&project, "{\"dc\":\"docker compose -f dev.yml\"}").unwrap();
 
-        let merged = load_from_paths(vec![global, project]).unwrap();
+        let merged = load_from_paths(vec![global, project], Shell::Bash, Platform::Linux).unwrap();
         let items: Vec<_> = merged.into_iter().collect();
 
         assert_eq!(
