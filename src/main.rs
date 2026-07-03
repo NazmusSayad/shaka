@@ -12,6 +12,7 @@ fn main() -> ExitCode {
         "zsh" => render::Shell::Zsh,
         "bash" => render::Shell::Bash,
         "fish" => render::Shell::Fish,
+
         "pwsh" => render::Shell::Pwsh,
         "pwsh-conflict" => render::Shell::PwshConflict,
         _ => {
