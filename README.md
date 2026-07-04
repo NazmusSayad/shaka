@@ -41,14 +41,10 @@ curl -fsSL https://github.com/NazmusSayad/shaka/raw/main/install.sh | sh
 (Invoke-WebRequest -UseBasicParsing https://github.com/NazmusSayad/shaka/raw/main/install.ps1).Content | Invoke-Expression
 ```
 
-The installers detect OS/architecture, download the latest release, verify checksums, replace older versions, and give PATH guidance.
-
-From source:
+Using cargo:
 
 ```sh
-cargo install --path .   # local checkout
 cargo install shaka      # from crates.io
-cargo run -- zsh         # development
 ```
 
 ## Usage
