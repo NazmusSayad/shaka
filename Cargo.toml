@@ -5,6 +5,8 @@ version = "0.0.3"
 readme = "README.md"
 license = "MIT"
 description = "Generate shell aliases and functions from YAML/JSONC config files"
+repository = "https://github.com/NazmusSayad/shaka"
+homepage = "https://github.com/NazmusSayad/shaka"
 
 [dependencies]
 indexmap = "2"
