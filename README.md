@@ -89,16 +89,11 @@ test: cargo test
 
 ### Format
 
-YAML or JSONC, in map or pair-list form:
+YAML or JSONC:
 
 ```yaml
 dc: docker compose
 gs: git status
-```
-
-```yaml
-- [dc, docker compose]
-- [gs, git status]
 ```
 
 ```jsonc
