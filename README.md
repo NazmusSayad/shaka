@@ -191,6 +191,41 @@ JSONC form:
 }
 ```
 
+### Conditional entries
+
+A value can also be an object with a `cmd` field plus optional `platform` and/or `shell` filters. The entry is only emitted when the current platform and shell match; otherwise it is dropped before merging.
+
+- `cmd` — the command string (required).
+- `platform` — restrict to `windows`, `linux`, or `macos`.
+- `shell` — restrict to `bash`, `zsh`, `fish`, `pwsh`, or `pwsh-conflict`.
+
+Both `platform` and `shell` accept a single value or a list. When both are given, the entry applies only if both match. A plain string value has no restrictions and applies everywhere.
+
+```yaml
+gs: git status # raw string, all platforms and shells
+ll:
+  cmd: eza -l
+  platform: [linux, macos]
+open:
+  cmd: explorer .
+  platform: windows
+  shell: pwsh
+```
+
+The same in JSONC:
+
+```jsonc
+{
+  "gs": "git status",
+  "ll": { "cmd": "eza -l", "platform": ["linux", "macos"] },
+  "open": { "cmd": "explorer .", "platform": "windows", "shell": "pwsh" }
+}
+```
+
+`shell` matches the exact argument you pass to `shaka` — `pwsh` and `pwsh-conflict` are distinct tokens. An unknown `platform` or `shell` name is a configuration error.
+
+Because entries are filtered per file before merging, an entry that does not apply to the current platform/shell never shadows a matching entry with the same key from an earlier file.
+
 ## Precedence
 
 `shaka` loads global configuration first and then applies project-level configuration on top of it. In practice, this means your personal defaults can live in your home directory, while a repository can override or add commands locally without changing your global setup.

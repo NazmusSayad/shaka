@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "shaka"
-version = "0.0.3"
+version = "0.0.5"
 dependencies = [
  "indexmap",
  "jsonc-parser",
