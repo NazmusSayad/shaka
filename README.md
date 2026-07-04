@@ -68,10 +68,10 @@ Valid arguments: `bash`, `zsh`, `fish`, `pwsh`, `pwsh-conflict`. A missing or un
 
 Files are loaded in this order; later files override earlier ones by key.
 
-| Scope | Paths |
-| --- | --- |
-| Global | `~/.config/shaka.yaml`, `~/.config/shaka.json`, `~/.shaka.yaml`, `~/.shaka.json` |
-| Project | `./.shaka.yaml`, `./.shaka.json` (higher priority than global) |
+| Scope   | Paths                                                                            |
+| ------- | -------------------------------------------------------------------------------- |
+| Global  | `~/.config/shaka.yaml`, `~/.config/shaka.json`, `~/.shaka.yaml`, `~/.shaka.json` |
+| Project | `./.shaka.yaml`, `./.shaka.json` (higher priority than global)                   |
 
 So personal defaults live in your home directory, and a repository can override or add commands locally:
 
@@ -83,7 +83,7 @@ ls: eza
 
 ```yaml
 # ./.shaka.yaml
-dc: docker compose -f dev.yml   # replaces the global dc
+dc: docker compose -f dev.yml # replaces the global dc
 test: cargo test
 ```
 
@@ -105,7 +105,7 @@ gs: git status
 {
   // comments are allowed
   "dc": "docker compose",
-  "gs": "git status"
+  "gs": "git status",
 }
 ```
 
@@ -119,7 +119,7 @@ A value can be an object with a required `cmd` plus optional `platform` and/or `
 Both accept a single value or a list; when both are given, both must match. A plain string applies everywhere. An unknown name is a configuration error.
 
 ```yaml
-gs: git status                       # all platforms and shells
+gs: git status # all platforms and shells
 ll:
   cmd: eza -l
   platform: [linux, macos]
