@@ -6,203 +6,120 @@
   Generate aliases and functions for <code>bash</code>, <code>zsh</code>, <code>fish</code>, and PowerShell from a single YAML or JSONC config.
 </p>
 
-## Why you should choose shaka?
+## Why shaka?
 
-Managing shell shortcuts across multiple shells (bash, zsh, fish, PowerShell) becomes fragmented and hard to maintain. Aliases defined in `.zshrc` don't apply to bash, project-specific commands scatter across different files, and keeping them in sync is tedious.
+Define your shell shortcuts once and generate the right output for every shell. No more aliases duplicated across `.zshrc`, `.bashrc`, and PowerShell profiles, drifting out of sync.
 
-`shaka` solves this by letting you define all your shortcuts once in a single YAML or JSONC file and generate the appropriate shell-specific output. Benefits include:
-
-- Single source of truth for all commands
-- Automatic generation for bash, zsh, fish, and PowerShell
+- Single source of truth for bash, zsh, fish, and PowerShell
 - Project-level overrides for repository-specific commands
-- Built-in PowerShell compatibility (no manual alias conflict resolution)
+- Built-in PowerShell conflict handling
 
 ## Quick Start
 
-The example below uses `zsh`, but the same workflow applies to the other supported shells.
+1. Create `~/.config/shaka.yaml`:
 
-1. Create a global config file at `~/.config/shaka.yaml`:
+   ```yaml
+   dc: docker compose
+   gs: git status
+   ```
 
-```yaml
-dc: docker compose
-gs: git status
-```
+2. Evaluate the generated code in your shell (swap `zsh` for your shell):
 
-2. Ask `shaka` to generate shell code for your shell:
+   ```sh
+   eval "$(shaka zsh)"
+   ```
 
-```sh
-shaka zsh
-```
-
-Example output:
-
-```sh
-alias dc='docker compose'
-alias gs='git status'
-```
-
-3. Evaluate that output in your shell so the aliases become available in the current session:
-
-```sh
-eval "$(shaka zsh)"
-```
-
-4. Use the alias:
-
-```sh
-gs
-```
-
-Example behavior:
-
-```sh
-$ gs
-git status
-On branch main
-nothing to commit, working tree clean
-```
-
-To make this automatic every time you open a shell, add the same `eval "$(shaka zsh)"` line to your shell profile.
+   This makes `gs`, `dc`, etc. available in the current session. Add the same line to your shell profile to load them automatically.
 
 ## Installation
 
-Install the latest GitHub release with the platform installer script:
-
-- Linux/macOS:
-
-  ```sh
-  curl -fsSL https://github.com/NazmusSayad/shaka/raw/main/install.sh | sh
-  ```
-
-- Windows (PowerShell):
-
-  ```powershell
-  (Invoke-WebRequest -UseBasicParsing https://github.com/NazmusSayad/shaka/raw/main/install.ps1).Content | Invoke-Expression
-  ```
-
-The installers detect OS/architecture, download the latest release archive, verify checksums, replace previous installed versions, and handle PATH guidance.
-
-Install from the current source checkout:
-
 ```sh
-cargo install --path .
+# Linux/macOS
+curl -fsSL https://github.com/NazmusSayad/shaka/raw/main/install.sh | sh
+
+# Windows (PowerShell)
+(Invoke-WebRequest -UseBasicParsing https://github.com/NazmusSayad/shaka/raw/main/install.ps1).Content | Invoke-Expression
 ```
 
-If `shaka` is published on crates.io, install it as a package:
+The installers detect OS/architecture, download the latest release, verify checksums, replace older versions, and give PATH guidance.
+
+From source:
 
 ```sh
-cargo install shaka
-```
-
-Build and run locally during development:
-
-```sh
-cargo run -- zsh
+cargo install --path .   # local checkout
+cargo install shaka      # from crates.io
+cargo run -- zsh         # development
 ```
 
 ## Usage
 
-`shaka` prints shell code to standard output:
+`shaka` prints shell code to stdout. Load it per shell:
 
 ```sh
-shaka <bash|fish|pwsh|pwsh-conflict|zsh>
+eval "$(shaka bash)"
+eval "$(shaka zsh)"
+shaka fish | source
+Invoke-Expression (& shaka pwsh | Out-String)
 ```
 
-Typical usage:
-
-- `bash`
-
-  ```sh
-  eval "$(shaka bash)"
-  ```
-
-- `zsh`
-
-  ```sh
-  eval "$(shaka zsh)"
-  ```
-
-- `fish`
-
-  ```sh
-  shaka fish | source
-  ```
-
-- `pwsh`
-
-  ```sh
-  Invoke-Expression (& shaka pwsh | Out-String)
-  ```
-
-If the shell argument is missing or unsupported, `shaka` exits with an error and prints the expected usage string.
-
-## Supported Shells
-
-- `bash`
-- `fish`
-- `pwsh`
-- `zsh`
+Valid arguments: `bash`, `zsh`, `fish`, `pwsh`, `pwsh-conflict`. A missing or unsupported argument exits with an error and the usage string.
 
 ## Configuration
 
-`shaka` loads configuration files in the following order. Later files override earlier files.
+Files are loaded in this order; later files override earlier ones by key.
 
-### Global
+| Scope | Paths |
+| --- | --- |
+| Global | `~/.config/shaka.yaml`, `~/.config/shaka.json`, `~/.shaka.yaml`, `~/.shaka.json` |
+| Project | `./.shaka.yaml`, `./.shaka.json` (higher priority than global) |
 
-User-level configuration:
+So personal defaults live in your home directory, and a repository can override or add commands locally:
 
-- `~/.config/shaka.yaml`
-- `~/.config/shaka.json`
-- `~/.shaka.yaml`
-- `~/.shaka.json`
+```yaml
+# ~/.config/shaka.yaml
+dc: docker compose
+ls: eza
+```
 
-### Project
+```yaml
+# ./.shaka.yaml
+dc: docker compose -f dev.yml   # replaces the global dc
+test: cargo test
+```
 
-Project-level configuration from the current directory. These files have higher priority than global configuration:
+### Format
 
-- `./.shaka.yaml`
-- `./.shaka.json`
-
-## Configuration Format
-
-`shaka` accepts either YAML or JSONC.
-
-Map form:
+YAML or JSONC, in map or pair-list form:
 
 ```yaml
 dc: docker compose
 gs: git status
 ```
-
-Pair-list form:
 
 ```yaml
 - [dc, docker compose]
 - [gs, git status]
 ```
 
-JSONC form:
-
 ```jsonc
 {
   // comments are allowed
   "dc": "docker compose",
-  "gs": "git status",
+  "gs": "git status"
 }
 ```
 
 ### Conditional entries
 
-A value can also be an object with a `cmd` field plus optional `platform` and/or `shell` filters. The entry is only emitted when the current platform and shell match; otherwise it is dropped before merging.
+A value can be an object with a required `cmd` plus optional `platform` and/or `shell` filters. The entry is emitted only when the current platform and shell match; otherwise it is dropped before merging (so it never shadows a matching entry from an earlier file).
 
-- `cmd` — the command string (required).
-- `platform` — restrict to `windows`, `linux`, or `macos`.
-- `shell` — restrict to `bash`, `zsh`, `fish`, `pwsh`, or `pwsh-conflict`.
+- `platform` — `windows`, `linux`, or `macos`
+- `shell` — `bash`, `zsh`, `fish`, `pwsh`, or `pwsh-conflict`
 
-Both `platform` and `shell` accept a single value or a list. When both are given, the entry applies only if both match. A plain string value has no restrictions and applies everywhere.
+Both accept a single value or a list; when both are given, both must match. A plain string applies everywhere. An unknown name is a configuration error.
 
 ```yaml
-gs: git status # raw string, all platforms and shells
+gs: git status                       # all platforms and shells
 ll:
   cmd: eza -l
   platform: [linux, macos]
@@ -212,57 +129,7 @@ open:
   shell: pwsh
 ```
 
-The same in JSONC:
-
-```jsonc
-{
-  "gs": "git status",
-  "ll": { "cmd": "eza -l", "platform": ["linux", "macos"] },
-  "open": { "cmd": "explorer .", "platform": "windows", "shell": "pwsh" }
-}
-```
-
-`shell` matches the exact argument you pass to `shaka` — `pwsh` and `pwsh-conflict` are distinct tokens. An unknown `platform` or `shell` name is a configuration error.
-
-Because entries are filtered per file before merging, an entry that does not apply to the current platform/shell never shadows a matching entry with the same key from an earlier file.
-
-## Precedence
-
-`shaka` loads global configuration first and then applies project-level configuration on top of it. In practice, this means your personal defaults can live in your home directory, while a repository can override or add commands locally without changing your global setup.
-
-For example, you might keep this in your global config:
-
-```yaml
-# ~/.config/shaka.yaml
-dc: docker compose
-ls: eza
-```
-
-Then, inside a specific project, you might define:
-
-```yaml
-# ./.shaka.yaml
-dc: docker compose -f dev.yml
-test: cargo test
-```
-
-When `shaka` merges these files, the project value for `dc` replaces the global one, while the other commands remain available. The final result behaves as if you had written:
-
-```yaml
-ls: eza
-dc: docker compose -f dev.yml
-test: cargo test
-```
-
 ## Output
-
-`shaka` outputs shell code that you evaluate in your shell profile or startup script.
-
-For the config:
-
-```yaml
-dc: docker compose
-```
 
 `bash`, `zsh`, and `fish` render aliases:
 
@@ -270,53 +137,27 @@ dc: docker compose
 alias dc='docker compose'
 ```
 
-PowerShell renders functions:
+PowerShell renders functions. By default `shaka pwsh` removes any existing alias of the same name first, avoiding conflicts with built-ins:
 
 ```sh
 Remove-Alias -Name dc -Force -ErrorAction SilentlyContinue
 function dc { docker compose @args }
 ```
 
-## PowerShell Modes
-
-By default, `shaka pwsh` removes an existing alias with the same name before defining the function. This avoids conflicts with built-in aliases.
-
-If you want to keep built-in aliases and only emit functions, use:
-
-```sh
-Invoke-Expression (& shaka pwsh-conflict | Out-String)
-```
-
-That renders:
+To keep built-in aliases and emit only functions, use `pwsh-conflict`:
 
 ```sh
 function dc { docker compose @args }
 ```
 
-`shaka` uses `Remove-Alias` for cleanup in PowerShell mode.
+### PowerShell variable expansion
 
-## PowerShell Environment Variable Expansion
-
-In `pwsh` output mode, `shaka` expands environment variables inside command values before rendering functions. This is useful when your shortcuts depend on machine-specific locations such as your home directory or application install paths.
-
-- Supported forms: `$NAME` and `$env:NAME`
-- Missing variables are left unchanged
-- Expansion is only applied for `pwsh`; `bash`, `fish`, and `zsh` outputs are unchanged
-
-Example use case:
-
-You want a shortcut that opens your projects directory in your editor without hardcoding your user-specific home path.
-
-Example config:
+In `pwsh` mode only, `shaka` expands environment variables (`$NAME` and `$env:NAME`) in command values before rendering. Missing variables are left unchanged. This keeps machine-specific paths out of your config:
 
 ```yaml
 n: $HOME/.local/bin/node
 ```
 
-Generated PowerShell function:
-
 ```sh
-function n { C:/User/.local/bin/node @args }
+function n { C:/Users/you/.local/bin/node @args }
 ```
-
-This keeps the config portable while still producing a concrete command at render time. It is helpful when the command should stay the same logically, but the underlying absolute path differs from one machine to another.
