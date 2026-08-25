@@ -1,6 +1,15 @@
 use indexmap::IndexMap;
 use crate::utils::env_expand::expand_pwsh_env_vars;
 
+const STATEMENT_KEYWORDS: [&str; 5] = ["exit", "return", "break", "continue", "throw"];
+
+fn is_statement_command(command: &str) -> bool {
+    let first = command.split_whitespace().next().unwrap_or("");
+    STATEMENT_KEYWORDS
+        .iter()
+        .any(|keyword| keyword.eq_ignore_ascii_case(first))
+}
+
 pub fn render(entries: &IndexMap<String, String>, conflict_mode: bool) -> String {
     let mut out = String::new();
 
@@ -16,7 +25,10 @@ pub fn render(entries: &IndexMap<String, String>, conflict_mode: bool) -> String
         out.push_str(name);
         out.push_str(" { ");
         out.push_str(&expanded_command);
-        out.push_str(" @args }\n");
+        if !is_statement_command(&expanded_command) {
+            out.push_str(" @args");
+        }
+        out.push_str(" }\n");
     }
 
     out
@@ -77,6 +89,19 @@ mod tests {
         assert_eq!(
             render(&entries, false),
             "Remove-Alias -Name .. -Force -ErrorAction SilentlyContinue\nfunction .. { cd .. @args }\n"
+        );
+    }
+
+    #[test]
+    fn omits_splatting_for_statement_keywords() {
+        let mut entries = IndexMap::new();
+        entries.insert("xxx".to_string(), "exit".to_string());
+        entries.insert("q1".to_string(), "Exit 1".to_string());
+        entries.insert("exx".to_string(), "exitx".to_string());
+        entries.insert("dc".to_string(), "docker compose".to_string());
+        assert_eq!(
+            render(&entries, true),
+            "function xxx { exit }\nfunction q1 { Exit 1 }\nfunction exx { exitx @args }\nfunction dc { docker compose @args }\n"
         );
     }
 }
