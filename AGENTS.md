@@ -1,0 +1,1 @@
+Keep all tests in dedicated `*_test.rs` files. Do not define tests inline in implementation files; implementation files may only declare an external test module with `#[cfg(test)]` and `#[path = "..._test.rs"]`.
