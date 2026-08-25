@@ -14,6 +14,7 @@ fn main() -> ExitCode {
 
         "pwsh" => render::Shell::Pwsh,
         "pwsh-conflict" => render::Shell::PwshConflict,
+
         _ => {
             eprintln!("unsupported shell: {shell}");
             eprintln!("usage: shaka <bash|fish|pwsh|pwsh-conflict|zsh> [config]");
