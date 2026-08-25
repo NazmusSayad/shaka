@@ -34,17 +34,7 @@ Define your shell shortcuts once and generate the right output for every shell. 
 ## Installation
 
 ```sh
-# Linux/macOS
-curl -fsSL https://github.com/NazmusSayad/shaka/raw/main/install.sh | sh
-
-# Windows (PowerShell)
-(Invoke-WebRequest -UseBasicParsing https://github.com/NazmusSayad/shaka/raw/main/install.ps1).Content | Invoke-Expression
-```
-
-Using cargo:
-
-```sh
-cargo install shaka      # from crates.io
+cargo install shaka
 ```
 
 ## Usage
