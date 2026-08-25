@@ -21,14 +21,38 @@ enum Value {
 #[serde(rename_all = "camelCase")]
 struct Conditional {
     cmd: String,
-    
+    #[serde(rename = "cmd.bash")]
+    cmd_bash: Option<String>,
+    #[serde(rename = "cmd.fish")]
+    cmd_fish: Option<String>,
+    #[serde(rename = "cmd.pwsh")]
+    cmd_pwsh: Option<String>,
+    #[serde(rename = "cmd.pwsh-conflict")]
+    cmd_pwsh_conflict: Option<String>,
+    #[serde(rename = "cmd.zsh")]
+    cmd_zsh: Option<String>,
+
     #[serde(alias = "shellInclude")]
     shell: Option<OneOrMany<Shell>>,
     shell_exclude: Option<OneOrMany<Shell>>,
-    
+
     #[serde(alias = "platformInclude")]
     platform: Option<OneOrMany<Platform>>,
     platform_exclude: Option<OneOrMany<Platform>>,
+}
+
+impl Conditional {
+    fn command(self, shell: Shell) -> String {
+        let command = match shell {
+            Shell::Bash => self.cmd_bash,
+            Shell::Fish => self.cmd_fish,
+            Shell::Pwsh => self.cmd_pwsh,
+            Shell::PwshConflict => self.cmd_pwsh_conflict.or(self.cmd_pwsh),
+            Shell::Zsh => self.cmd_zsh,
+        };
+
+        command.unwrap_or(self.cmd)
+    }
 }
 
 #[derive(Deserialize)]
@@ -118,7 +142,7 @@ pub fn load_config(shell: Shell, path: Option<&str>) -> Result<IndexMap<String, 
                         .as_ref()
                         .is_none_or(|values| !values.contains(&platform));
 
-                (shell_matches && platform_matches).then_some(value.cmd)
+                (shell_matches && platform_matches).then(|| value.command(shell))
             }
         };
 
@@ -130,3 +154,7 @@ pub fn load_config(shell: Shell, path: Option<&str>) -> Result<IndexMap<String, 
 
     Ok(entries)
 }
+
+#[cfg(test)]
+#[path = "config_test.rs"]
+mod tests;
