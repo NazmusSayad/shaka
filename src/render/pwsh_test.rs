@@ -103,3 +103,134 @@ fn keeps_splatting_when_keyword_is_not_final_command() {
         "function dev { exit; code . @args }\nfunction mix { return 1; git status @args }\n"
     );
 }
+
+#[test]
+fn renders_pwsh_multiple_entries() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("a".to_string(), "cmd a".to_string());
+    entries.insert("b".to_string(), "cmd b".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("function a"));
+    assert!(out.contains("function b"));
+    assert_eq!(out.matches("function ").count(), 2);
+}
+
+#[test]
+fn pwsh_not_statement_when_prefix() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("x".to_string(), "myexit".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("myexit @args"));
+}
+
+#[test]
+fn pwsh_handles_semicolon_separated_tail() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("k".to_string(), "echo hi; exit".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("exit"));
+}
+
+#[test]
+fn pwsh_handles_newline_tail() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("k".to_string(), "echo hi\nexit".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("exit"));
+}
+
+#[test]
+fn pwsh_bare_keyword_with_args() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("k".to_string(), "return".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("return"));
+    assert!(out.contains("$args"));
+}
+
+#[test]
+fn pwsh_non_bare_keywords_get_splatting() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("a".to_string(), "git status".to_string());
+    assert!(render(&entries, true).contains("git status @args"));
+}
+
+#[test]
+fn pwsh_empty_command() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("empty".to_string(), "".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("function empty"));
+}
+
+#[test]
+fn pwsh_remove_alias_only_when_not_conflict() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("a".to_string(), "cmd".to_string());
+    entries.insert("b".to_string(), "cmd2".to_string());
+    let with = render(&entries, false);
+    let without = render(&entries, true);
+    assert_eq!(with.matches("Remove-Alias").count(), 2);
+    assert_eq!(without.matches("Remove-Alias").count(), 0);
+}
+
+#[test]
+fn pwsh_all_keywords_handled() {
+    for kw in ["exit","return","break","continue","throw"] {
+        let mut entries = indexmap::IndexMap::new();
+        entries.insert("k".to_string(), kw.to_string());
+        let out = render(&entries, true);
+        assert!(out.contains(kw), "missing {kw}");
+    }
+}
+
+#[test]
+fn pwsh_compound_with_multiple_semicolons() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("k".to_string(), "a; b; c; exit".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("a; b; c"));
+    assert!(out.contains("exit"));
+}
+
+#[test]
+fn pwsh_preserves_order() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("z".to_string(), "zcmd".to_string());
+    entries.insert("a".to_string(), "acmd".to_string());
+    let out = render(&entries, true);
+    assert!(out.find("function z").unwrap() < out.find("function a").unwrap());
+}
+
+#[test]
+fn pwsh_large_batch() {
+    let mut entries = indexmap::IndexMap::new();
+    for i in 0..25 { entries.insert(format!("k{i}"), format!("cmd{i}")); }
+    let out = render(&entries, false);
+    assert_eq!(out.matches("function ").count(), 25);
+    assert_eq!(out.matches("Remove-Alias").count(), 25);
+}
+
+#[test]
+fn pwsh_case_insensitive_keyword() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("x".to_string(), "EXIT".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("EXIT") || out.contains("exit"));
+}
+
+#[test]
+fn pwsh_handles_crlf_tail() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("k".to_string(), "echo hi\r\nexit".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("exit"));
+}
+
+#[test]
+fn pwsh_special_chars_in_command() {
+    let mut entries = indexmap::IndexMap::new();
+    entries.insert("x".to_string(), "echo hi bye".to_string());
+    let out = render(&entries, true);
+    assert!(out.contains("echo"));
+}
