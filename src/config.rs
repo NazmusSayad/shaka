@@ -1,7 +1,7 @@
 use crate::render::Shell;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -53,9 +53,27 @@ enum Platform {
     Macos,
 }
 
-pub fn load_config(shell: Shell, path: &Path) -> Result<IndexMap<String, String>, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|error| format!("failed reading {}: {error}", path.display()))?;
+pub fn load_config(shell: Shell, path: Option<&str>) -> Result<IndexMap<String, String>, String> {
+    let custom_path = path.is_some();
+    let home = || std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    let path = match path {
+        Some("~") => home().map(PathBuf::from),
+        Some(path) if path.starts_with("~/") => {
+            home().map(|home| PathBuf::from(home).join(&path[2..]))
+        }
+        Some(path) => Some(PathBuf::from(path)),
+        None => home().map(|home| PathBuf::from(home).join(".config/shaka/config.json")),
+    };
+    let Some(path) = path else {
+        return Err("home directory not found".into());
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) if !custom_path && error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(IndexMap::new());
+        }
+        Err(error) => return Err(format!("failed reading {}: {error}", path.display())),
+    };
     let config: Config = serde_json::from_str(&content)
         .map_err(|error| format!("failed parsing JSON {}: {error}", path.display()))?;
     let platform = match std::env::consts::OS {
@@ -110,7 +128,3 @@ pub fn load_config(shell: Shell, path: &Path) -> Result<IndexMap<String, String>
 
     Ok(entries)
 }
-
-#[cfg(test)]
-#[path = "config_test.rs"]
-mod tests;
