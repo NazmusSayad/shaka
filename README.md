@@ -3,142 +3,183 @@
 <p align="center"><strong>One config for every shell shortcut.</strong></p>
 
 <p align="center">
-  Generate aliases and functions for <code>bash</code>, <code>zsh</code>, <code>fish</code>, and PowerShell from a single YAML or JSONC config.
+  Generate aliases and functions for Bash, Fish, PowerShell, and Zsh from a single JSON config.
 </p>
 
-## Why shaka?
+## Why Shaka?
 
-Define your shell shortcuts once and generate the right output for every shell. No more aliases duplicated across `.zshrc`, `.bashrc`, and PowerShell profiles, drifting out of sync.
+Define shell shortcuts once and generate the right output for every shell. No more aliases duplicated across shell profiles and drifting out of sync.
 
-- Single source of truth for bash, zsh, fish, and PowerShell
-- Project-level overrides for repository-specific commands
+- One JSON source for every supported shell
+- Per-shell command overrides
+- Shell and platform filters
 - Built-in PowerShell conflict handling
+
+## Supported Shells
+
+- `bash`: Bash
+- `fish`: Fish
+- `zsh`: Zsh
+- `pwsh`: PowerShell
+- `pwsh-conflict`: PowerShell without removing existing aliases
+
+These values are used by the CLI, shell-specific command overrides, and shell filters.
 
 ## Quick Start
 
-1. Create `~/.config/shaka.yaml`:
+1. Create `~/.config/shaka/config.json`:
 
-   ```yaml
-   dc: docker compose
-   gs: git status
+   ```json
+   {
+     "dc": "docker compose",
+     "gs": "git status"
+   }
    ```
 
-2. Evaluate the generated code in your shell (swap `zsh` for your shell):
+2. Evaluate the generated code in your shell:
 
    ```sh
    eval "$(shaka zsh)"
    ```
 
-   This makes `gs`, `dc`, etc. available in the current session. Add the same line to your shell profile to load them automatically.
+   Replace `zsh` with your shell value. Add the command to your shell profile to load the shortcuts automatically.
 
 ## Installation
+
+### Cargo
 
 ```sh
 cargo install shaka
 ```
 
-## Usage
-
-`shaka` prints shell code to stdout. Load it per shell:
+### mise
 
 ```sh
-eval "$(shaka bash)"
-eval "$(shaka zsh)"
-shaka fish | source
-Invoke-Expression (& shaka pwsh | Out-String)
+mise use -g cargo:shaka
 ```
 
-Valid arguments: `bash`, `zsh`, `fish`, `pwsh`, `pwsh-conflict`. A missing or unsupported argument exits with an error and the usage string.
+## Usage
+
+Shaka writes shell code to standard output:
+
+```text
+shaka <bash|fish|pwsh|pwsh-conflict|zsh> [config-file]
+```
+
+It reads `~/.config/shaka/config.json` by default. Pass another file as the second argument when needed:
+
+```sh
+shaka bash ~/.config/shaka.json
+```
+
+A missing default config produces no output. A missing explicitly provided config returns an error.
 
 ## Configuration
 
-Files are loaded in this order; later files override earlier ones by key.
+A plain string defines an alias for every shell and platform:
 
-| Scope   | Paths                                                                            |
-| ------- | -------------------------------------------------------------------------------- |
-| Global  | `~/.config/shaka.yaml`, `~/.config/shaka.json`, `~/.shaka.yaml`, `~/.shaka.json` |
-| Project | `./.shaka.yaml`, `./.shaka.json` (higher priority than global)                   |
-
-So personal defaults live in your home directory, and a repository can override or add commands locally:
-
-```yaml
-# ~/.config/shaka.yaml
-dc: docker compose
-ls: eza
-```
-
-```yaml
-# ./.shaka.yaml
-dc: docker compose -f dev.yml # replaces the global dc
-test: cargo test
-```
-
-### Format
-
-YAML or JSONC:
-
-```yaml
-dc: docker compose
-gs: git status
-```
-
-```jsonc
+```json
 {
-  // comments are allowed
+  "g": "git",
   "dc": "docker compose",
-  "gs": "git status",
+  "ll": "ls -la"
 }
 ```
 
-### Conditional entries
+### Shell-Specific Commands
 
-A value can be an object with a required `cmd` plus optional `platform` and/or `shell` filters. The entry is emitted only when the current platform and shell match; otherwise it is dropped before merging (so it never shadows a matching entry from an earlier file).
+Use an object when an alias needs a different command for a particular shell. `cmd` is required and acts as the fallback.
 
-- `platform` — `windows`, `linux`, or `macos`
-- `shell` — `bash`, `zsh`, `fish`, `pwsh`, or `pwsh-conflict`
-
-Both accept a single value or a list; when both are given, both must match. A plain string applies everywhere. An unknown name is a configuration error.
-
-```yaml
-gs: git status # all platforms and shells
-ll:
-  cmd: eza -l
-  platform: [linux, macos]
-open:
-  cmd: explorer .
-  platform: windows
-  shell: pwsh
+```json
+{
+  "where": {
+    "cmd": "which",
+    "cmd.bash": "type -a",
+    "cmd.fish": "type -a",
+    "cmd.pwsh": "Get-Command",
+    "cmd.zsh": "whence -a"
+  }
+}
 ```
 
-## Output
+Use `cmd.<shell>` with any supported shell value. PowerShell conflict mode uses `cmd.pwsh` unless `cmd.pwsh-conflict` is also set.
 
-`bash`, `zsh`, and `fish` render aliases:
+### Filters
+
+Aliases can be limited by shell or platform. Each filter accepts one value or an array.
+
+```json
+{
+  "ll": {
+    "cmd": "ls -la",
+    "shell": ["bash", "zsh"]
+  },
+  "copy": {
+    "cmd": "pbcopy",
+    "platform": "macos"
+  },
+  "search": {
+    "cmd": "rg",
+    "shellExclude": "pwsh"
+  }
+}
+```
+
+Shell filters accept any supported shell value. Platform values are `windows`, `linux`, and `macos`.
+
+Available filters are `shell`, `shellExclude`, `platform`, and `platformExclude`. `shellInclude` and `platformInclude` are accepted aliases for `shell` and `platform`. Include and exclude filters for the same category cannot be used together.
+
+### Repeated Aliases
+
+Use a top-level array of name-value pairs to define the same alias for different conditions:
+
+```json
+[
+  ["open", { "cmd": "open", "platform": "macos" }],
+  ["open", { "cmd": "xdg-open", "platform": "linux" }]
+]
+```
+
+## Shell Setup
+
+### Bash
+
+Add to `~/.bashrc`:
 
 ```sh
-alias dc='docker compose'
+eval "$(shaka bash)"
 ```
 
-PowerShell renders functions. By default `shaka pwsh` removes any existing alias of the same name first, avoiding conflicts with built-ins:
+### Zsh
+
+Add to `~/.zshrc`:
 
 ```sh
-Remove-Alias -Name dc -Force -ErrorAction SilentlyContinue
-function dc { docker compose @args }
+eval "$(shaka zsh)"
 ```
 
-To keep built-in aliases and emit only functions, use `pwsh-conflict`:
+### Fish
 
-```sh
-function dc { docker compose @args }
+Add to `~/.config/fish/config.fish`:
+
+```fish
+shaka fish | source
 ```
 
-### PowerShell variable expansion
+### PowerShell
 
-In `pwsh` mode only, `shaka` expands environment variables (`$NAME` and `$env:NAME`) in command values before rendering. Missing variables are left unchanged. This keeps machine-specific paths out of your config:
+Add to your PowerShell profile:
 
-```yaml
-n: $HOME/.local/bin/node
+```powershell
+Invoke-Expression (& shaka pwsh | Out-String)
 ```
 
-```sh
-function n { C:/Users/you/.local/bin/node @args }
+Use `pwsh-conflict` to keep existing PowerShell aliases and emit only functions:
+
+```powershell
+Invoke-Expression (& shaka pwsh-conflict | Out-String)
 ```
+
+## License
+
+[MIT](LICENSE)

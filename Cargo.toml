@@ -4,13 +4,17 @@ edition = "2024"
 version = "0.0.6"
 readme = "README.md"
 license = "MIT"
-description = "Generate shell aliases and functions from YAML/JSONC config files"
+description = "Generate shell aliases and functions from a JSON config file"
 repository = "https://github.com/NazmusSayad/shaka"
 homepage = "https://github.com/NazmusSayad/shaka"
 
 [dependencies]
-indexmap = "2"
-jsonc-parser = { version = "0.26", features = ["serde"] }
+indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml_ng = "0.10"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+strip = true
