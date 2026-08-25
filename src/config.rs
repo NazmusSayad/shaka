@@ -14,7 +14,7 @@ enum Config {
 #[serde(untagged)]
 enum Value {
     Command(String),
-    Conditional(Conditional),
+    Conditional(Box<Conditional>),
 }
 
 #[derive(Deserialize)]
