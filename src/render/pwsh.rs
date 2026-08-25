@@ -12,20 +12,37 @@ fn ends_with_statement_command(command: &str) -> bool {
         .any(|keyword| keyword.eq_ignore_ascii_case(first))
 }
 
-fn ends_with_bare_statement_command(command: &str) -> bool {
-    statement_tail(command).is_some_and(|segment| {
-        STATEMENT_KEYWORDS
-            .iter()
-            .any(|kw| segment.eq_ignore_ascii_case(kw))
-    })
-}
-
 fn statement_tail(command: &str) -> Option<&str> {
     command
         .split([';', '\n', '\r'])
         .rev()
         .find(|segment| !segment.trim().is_empty())
         .map(|segment| segment.trim())
+}
+
+fn bare_keyword_split(command: &str) -> Option<(String, String)> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let segments: Vec<&str> = trimmed.split([';', '\n', '\r']).collect();
+    let last_idx = segments.iter().rposition(|s| !s.trim().is_empty())?;
+    let tail = segments[last_idx].trim().to_string();
+    if !STATEMENT_KEYWORDS
+        .iter()
+        .any(|kw| kw.eq_ignore_ascii_case(&tail))
+    {
+        return None;
+    }
+    let prefix = segments[..last_idx]
+        .iter()
+        .filter_map(|s| {
+            let t = s.trim();
+            if t.is_empty() { None } else { Some(t) }
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    Some((prefix, tail))
 }
 
 pub fn render(entries: &IndexMap<String, String>, conflict_mode: bool) -> String {
@@ -42,10 +59,18 @@ pub fn render(entries: &IndexMap<String, String>, conflict_mode: bool) -> String
         out.push_str("function ");
         out.push_str(name);
         out.push_str(" { ");
-        out.push_str(&expanded_command);
-        if ends_with_bare_statement_command(&expanded_command) {
-            out.push_str(" $args[0]");
-        } else if !ends_with_statement_command(&expanded_command) {
+        if let Some((prefix, keyword)) = bare_keyword_split(&expanded_command) {
+            if !prefix.is_empty() {
+                out.push_str(&prefix);
+                out.push_str("; ");
+            }
+            out.push_str(&format!(
+                "if ($args.Count -gt 1) {{ Write-Warning \"{name}: {keyword} expects at most 1 argument; received $($args.Count); using first\" }}; if ($args.Count -gt 0) {{ {keyword} $args[0] }} else {{ {keyword} }}"
+            ));
+        } else if ends_with_statement_command(&expanded_command) {
+            out.push_str(&expanded_command);
+        } else {
+            out.push_str(&expanded_command);
             out.push_str(" @args");
         }
         out.push_str(" }\n");
@@ -121,7 +146,7 @@ mod tests {
         entries.insert("dc".to_string(), "docker compose".to_string());
         assert_eq!(
             render(&entries, true),
-            "function xxx { exit $args[0] }\nfunction q1 { Exit 1 }\nfunction exx { exitx @args }\nfunction dc { docker compose @args }\n"
+            "function xxx { if ($args.Count -gt 1) { Write-Warning \"xxx: exit expects at most 1 argument; received $($args.Count); using first\" }; if ($args.Count -gt 0) { exit $args[0] } else { exit } }\nfunction q1 { Exit 1 }\nfunction exx { exitx @args }\nfunction dc { docker compose @args }\n"
         );
     }
 
@@ -132,7 +157,9 @@ mod tests {
             entries.insert("k".to_string(), format!("Write-Host done; {keyword}"));
             assert_eq!(
                 render(&entries, true),
-                format!("function k {{ Write-Host done; {keyword} $args[0] }}\n")
+                format!(
+                    "function k {{ Write-Host done; if ($args.Count -gt 1) {{ Write-Warning \"k: {keyword} expects at most 1 argument; received $($args.Count); using first\" }}; if ($args.Count -gt 0) {{ {keyword} $args[0] }} else {{ {keyword} }} }}\n"
+                )
             );
         }
     }
@@ -145,7 +172,7 @@ mod tests {
         entries.insert("thr".to_string(), "cleanup ;THROW 'boom'".to_string());
         assert_eq!(
             render(&entries, true),
-            "function bye { clear; exit $args[0] }\nfunction brk { save;\nbreak $args[0] }\nfunction thr { cleanup ;THROW 'boom' }\n"
+            "function bye { clear; if ($args.Count -gt 1) { Write-Warning \"bye: exit expects at most 1 argument; received $($args.Count); using first\" }; if ($args.Count -gt 0) { exit $args[0] } else { exit } }\nfunction brk { save; if ($args.Count -gt 1) { Write-Warning \"brk: break expects at most 1 argument; received $($args.Count); using first\" }; if ($args.Count -gt 0) { break $args[0] } else { break } }\nfunction thr { cleanup ;THROW 'boom' }\n"
         );
     }
 
