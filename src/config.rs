@@ -5,27 +5,139 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Deserialize)]
-#[serde(untagged)]
 enum ConfigForm {
     Map(BTreeMap<String, ConfigValue>),
     Pairs(Vec<(String, ConfigValue)>),
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
+impl<'de> Deserialize<'de> for ConfigForm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FormVisitor;
+        impl<'de> serde::de::Visitor<'de> for FormVisitor {
+            type Value = ConfigForm;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a map or a sequence of pairs")
+            }
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let de = serde::de::value::MapAccessDeserializer::new(map);
+                let m = BTreeMap::<String, ConfigValue>::deserialize(de)?;
+                Ok(ConfigForm::Map(m))
+            }
+            fn visit_seq<S>(self, seq: S) -> Result<Self::Value, S::Error>
+            where
+                S: serde::de::SeqAccess<'de>,
+            {
+                let de = serde::de::value::SeqAccessDeserializer::new(seq);
+                let v = Vec::<(String, ConfigValue)>::deserialize(de)?;
+                Ok(ConfigForm::Pairs(v))
+            }
+        }
+        deserializer.deserialize_any(FormVisitor)
+    }
+}
+
 enum ConfigValue {
     Raw(String),
     Detailed(DetailedValue),
 }
 
-#[derive(Deserialize)]
+impl<'de> Deserialize<'de> for ConfigValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ValueVisitor;
+        impl<'de> serde::de::Visitor<'de> for ValueVisitor {
+            type Value = ConfigValue;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a string or an object with `cmd`")
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(ConfigValue::Raw(v.to_owned()))
+            }
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(ConfigValue::Raw(v))
+            }
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let de = serde::de::value::MapAccessDeserializer::new(map);
+                let d = DetailedValue::deserialize(de)?;
+                Ok(ConfigValue::Detailed(d))
+            }
+        }
+        deserializer.deserialize_any(ValueVisitor)
+    }
+}
+
 struct DetailedValue {
     cmd: String,
-    #[serde(default)]
-    shell: Option<OneOrMany<Shell>>,
-    #[serde(default)]
-    platform: Option<OneOrMany<Platform>>,
+    shell_include: Option<OneOrMany<Shell>>,
+    shell_exclude: Option<OneOrMany<Shell>>,
+    platform_include: Option<OneOrMany<Platform>>,
+    platform_exclude: Option<OneOrMany<Platform>>,
+}
+
+impl<'de> Deserialize<'de> for DetailedValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            cmd: String,
+            #[serde(default, rename = "shell")]
+            shell: Option<OneOrMany<Shell>>,
+            #[serde(default, rename = "shellInclude")]
+            shell_include: Option<OneOrMany<Shell>>,
+            #[serde(default, rename = "shellExclude")]
+            shell_exclude: Option<OneOrMany<Shell>>,
+            #[serde(default, rename = "platform")]
+            platform: Option<OneOrMany<Platform>>,
+            #[serde(default, rename = "platformInclude")]
+            platform_include: Option<OneOrMany<Platform>>,
+            #[serde(default, rename = "platformExclude")]
+            platform_exclude: Option<OneOrMany<Platform>>,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        let shell_count = helper.shell.is_some() as u8
+            + helper.shell_include.is_some() as u8
+            + helper.shell_exclude.is_some() as u8;
+        if shell_count > 1 {
+            return Err(serde::de::Error::custom(
+                "`shell`, `shellInclude` and `shellExclude` are mutually exclusive; only one may be specified",
+            ));
+        }
+        let platform_count = helper.platform.is_some() as u8
+            + helper.platform_include.is_some() as u8
+            + helper.platform_exclude.is_some() as u8;
+        if platform_count > 1 {
+            return Err(serde::de::Error::custom(
+                "`platform`, `platformInclude` and `platformExclude` are mutually exclusive; only one may be specified",
+            ));
+        }
+        Ok(DetailedValue {
+            cmd: helper.cmd,
+            shell_include: helper.shell.or(helper.shell_include),
+            shell_exclude: helper.shell_exclude,
+            platform_include: helper.platform.or(helper.platform_include),
+            platform_exclude: helper.platform_exclude,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -136,13 +248,19 @@ fn filter_pairs(
         match value {
             ConfigValue::Raw(cmd) => kept.push((key, cmd)),
             ConfigValue::Detailed(detail) => {
-                let platform_ok = match &detail.platform {
-                    None => true,
-                    Some(allowed) => allowed.contains(&platform),
+                let platform_ok = if let Some(include) = &detail.platform_include {
+                    include.contains(&platform)
+                } else if let Some(exclude) = &detail.platform_exclude {
+                    !exclude.contains(&platform)
+                } else {
+                    true
                 };
-                let shell_ok = match &detail.shell {
-                    None => true,
-                    Some(allowed) => allowed.contains(&shell),
+                let shell_ok = if let Some(include) = &detail.shell_include {
+                    include.contains(&shell)
+                } else if let Some(exclude) = &detail.shell_exclude {
+                    !exclude.contains(&shell)
+                } else {
+                    true
                 };
 
                 if platform_ok && shell_ok {
