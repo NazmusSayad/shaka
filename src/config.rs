@@ -21,9 +21,11 @@ enum Value {
 #[serde(rename_all = "camelCase")]
 struct Conditional {
     cmd: String,
+    
     #[serde(alias = "shellInclude")]
     shell: Option<OneOrMany<Shell>>,
     shell_exclude: Option<OneOrMany<Shell>>,
+    
     #[serde(alias = "platformInclude")]
     platform: Option<OneOrMany<Platform>>,
     platform_exclude: Option<OneOrMany<Platform>>,
