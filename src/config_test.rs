@@ -18,7 +18,7 @@ fn temp_dir() -> PathBuf {
 
 fn config(content: &str) -> (PathBuf, PathBuf) {
     let dir = temp_dir();
-    let path = dir.join("shaka.json");
+    let path = dir.join("config.json");
     fs::write(&path, content).unwrap();
     (dir, path)
 }
@@ -27,7 +27,7 @@ fn config(content: &str) -> (PathBuf, PathBuf) {
 fn loads_a_config_file() {
     let (dir, path) = config(r#"{"gs":"git status","dc":"docker compose"}"#);
 
-    let result = load_config(Shell::Bash, path.to_str()).unwrap();
+    let result = load_config(Shell::Bash, &path).unwrap();
 
     assert_eq!(result["gs"], "git status");
     assert_eq!(result["dc"], "docker compose");
@@ -35,12 +35,12 @@ fn loads_a_config_file() {
 }
 
 #[test]
-fn resolves_a_directory_to_shaka_json() {
+fn rejects_a_directory_path() {
     let (dir, _) = config(r#"{"gs":"git status"}"#);
 
-    let result = load_config(Shell::Bash, dir.to_str()).unwrap();
+    let error = load_config(Shell::Bash, &dir).unwrap_err();
 
-    assert_eq!(result["gs"], "git status");
+    assert!(error.contains("failed reading"));
     fs::remove_dir_all(dir).unwrap();
 }
 
@@ -56,7 +56,7 @@ fn resolves_shell_filters() {
         }"#,
     );
 
-    let result = load_config(Shell::Bash, path.to_str()).unwrap();
+    let result = load_config(Shell::Bash, &path).unwrap();
 
     assert_eq!(
         result.keys().map(String::as_str).collect::<Vec<_>>(),
@@ -81,7 +81,7 @@ fn resolves_platform_filters() {
         }}"#
     ));
 
-    let result = load_config(Shell::Bash, path.to_str()).unwrap();
+    let result = load_config(Shell::Bash, &path).unwrap();
 
     assert_eq!(
         result.keys().map(String::as_str).collect::<Vec<_>>(),
@@ -94,7 +94,7 @@ fn resolves_platform_filters() {
 fn pair_entries_use_the_last_value() {
     let (dir, path) = config(r#"[["first","1"],["same","old"],["last","3"],["same","new"]]"#);
 
-    let result = load_config(Shell::Bash, path.to_str()).unwrap();
+    let result = load_config(Shell::Bash, &path).unwrap();
 
     assert_eq!(
         result.keys().map(String::as_str).collect::<Vec<_>>(),
@@ -108,7 +108,7 @@ fn pair_entries_use_the_last_value() {
 fn rejects_include_and_exclude_together() {
     let (dir, path) = config(r#"{"bad":{"cmd":"no","shell":"bash","shellExclude":"fish"}}"#);
 
-    let error = load_config(Shell::Bash, path.to_str()).unwrap_err();
+    let error = load_config(Shell::Bash, &path).unwrap_err();
 
     assert_eq!(error, "shell include and exclude are mutually exclusive");
     fs::remove_dir_all(dir).unwrap();
@@ -118,7 +118,7 @@ fn rejects_include_and_exclude_together() {
 fn rejects_invalid_json() {
     let (dir, path) = config(r#"{"gs":"git status",}"#);
 
-    let error = load_config(Shell::Bash, path.to_str()).unwrap_err();
+    let error = load_config(Shell::Bash, &path).unwrap_err();
 
     assert!(error.contains("failed parsing JSON"));
     fs::remove_dir_all(dir).unwrap();
@@ -129,7 +129,7 @@ fn reports_a_missing_custom_path() {
     let dir = temp_dir();
     let path = dir.join("missing.json");
 
-    let error = load_config(Shell::Bash, path.to_str()).unwrap_err();
+    let error = load_config(Shell::Bash, &path).unwrap_err();
 
     assert!(error.contains("failed reading"));
     fs::remove_dir_all(dir).unwrap();
