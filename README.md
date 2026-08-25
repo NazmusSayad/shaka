@@ -1,8 +1,21 @@
-# Shaka
+<h1 align="center">SHAKA</h1>
 
-Shaka generates shell aliases and PowerShell functions from one JSON config. It supports Bash, Fish, PowerShell, and Zsh, with optional shell-specific commands and platform filters.
+<p align="center"><strong>One config for every shell shortcut.</strong></p>
 
-## Supported shells
+<p align="center">
+  Generate aliases and functions for Bash, Fish, PowerShell, and Zsh from a single JSON config.
+</p>
+
+## Why Shaka?
+
+Define shell shortcuts once and generate the right output for every shell. No more aliases duplicated across shell profiles and drifting out of sync.
+
+- One JSON source for every supported shell
+- Per-shell command overrides
+- Shell and platform filters
+- Built-in PowerShell conflict handling
+
+## Supported Shells
 
 - `bash`: Bash
 - `fish`: Fish
@@ -11,6 +24,25 @@ Shaka generates shell aliases and PowerShell functions from one JSON config. It 
 - `pwsh-conflict`: PowerShell without removing existing aliases
 
 These values are used by the CLI, shell-specific command overrides, and shell filters.
+
+## Quick Start
+
+1. Create `~/.config/shaka/config.json`:
+
+   ```json
+   {
+     "dc": "docker compose",
+     "gs": "git status"
+   }
+   ```
+
+2. Evaluate the generated code in your shell:
+
+   ```sh
+   eval "$(shaka zsh)"
+   ```
+
+   Replace `zsh` with your shell value. Add the command to your shell profile to load the shortcuts automatically.
 
 ## Installation
 
@@ -26,9 +58,25 @@ cargo install shaka
 mise use -g cargo:shaka
 ```
 
+## Usage
+
+Shaka writes shell code to standard output:
+
+```text
+shaka <bash|fish|pwsh|pwsh-conflict|zsh> [config-file]
+```
+
+It reads `~/.config/shaka/config.json` by default. Pass another file as the second argument when needed:
+
+```sh
+shaka bash ~/.config/shaka.json
+```
+
+A missing default config produces no output. A missing explicitly provided config returns an error.
+
 ## Configuration
 
-Shaka reads `~/.config/shaka/config.json` by default. A basic config maps alias names to commands:
+A plain string defines an alias for every shell and platform:
 
 ```json
 {
@@ -38,13 +86,7 @@ Shaka reads `~/.config/shaka/config.json` by default. A basic config maps alias 
 }
 ```
 
-Pass a different file as the second argument when needed:
-
-```sh
-shaka bash ~/.config/shaka.json
-```
-
-### Shell-specific commands
+### Shell-Specific Commands
 
 Use an object when an alias needs a different command for a particular shell. `cmd` is required and acts as the fallback.
 
@@ -60,7 +102,7 @@ Use an object when an alias needs a different command for a particular shell. `c
 }
 ```
 
-Use `cmd.<shell>` with any supported shell value listed above. PowerShell conflict mode uses `cmd.pwsh` unless `cmd.pwsh-conflict` is also set.
+Use `cmd.<shell>` with any supported shell value. PowerShell conflict mode uses `cmd.pwsh` unless `cmd.pwsh-conflict` is also set.
 
 ### Filters
 
@@ -83,11 +125,11 @@ Aliases can be limited by shell or platform. Each filter accepts one value or an
 }
 ```
 
-Shell filters accept any supported shell value listed above. Platform values are `windows`, `linux`, and `macos`.
+Shell filters accept any supported shell value. Platform values are `windows`, `linux`, and `macos`.
 
 Available filters are `shell`, `shellExclude`, `platform`, and `platformExclude`. `shellInclude` and `platformInclude` are accepted aliases for `shell` and `platform`. Include and exclude filters for the same category cannot be used together.
 
-### Repeated aliases
+### Repeated Aliases
 
 Use a top-level array of name-value pairs to define the same alias for different conditions:
 
@@ -98,9 +140,7 @@ Use a top-level array of name-value pairs to define the same alias for different
 ]
 ```
 
-## Shell setup
-
-Add the command for your shell to its startup file.
+## Shell Setup
 
 ### Bash
 
@@ -134,19 +174,11 @@ Add to your PowerShell profile:
 Invoke-Expression (& shaka pwsh | Out-String)
 ```
 
-Use `pwsh-conflict` instead of `pwsh` to keep existing PowerShell aliases rather than removing them before defining Shaka functions:
+Use `pwsh-conflict` to keep existing PowerShell aliases and emit only functions:
 
 ```powershell
 Invoke-Expression (& shaka pwsh-conflict | Out-String)
 ```
-
-## Usage
-
-```text
-shaka <bash|fish|pwsh|pwsh-conflict|zsh> [config-file]
-```
-
-Shaka writes shell code to standard output so it can be evaluated by the current shell. A missing default config produces no output; a missing explicitly provided config returns an error.
 
 ## License
 
